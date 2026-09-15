@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050507">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Neonly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Monoton&family=Pacifico&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --app-bg: #08080c;
+    --ink: #eef0f6;
+    --ink-dim: #8a8d9e;
+    --control-bg: #14141b;
+    --control-border: #262632;
+    --neon-color: #39ff65;
+    --board-bg: #050507;
+    --sign-size: 15;
+    --intensity: 1;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--app-bg);
+    color: var(--ink);
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overscroll-behavior: none;
+  }
+  body { min-height: 100svh; }
+
+  /* ============ BOARD ============ */
+
+  #board {
+    position: relative;
+    height: 40svh;
+    min-height: 200px;
+    margin: 12px 12px 6px;
+    border-radius: 14px;
+    background: var(--board-bg);
+    border: 1px solid #1b1b24;
+    overflow: hidden;
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.6), 0 14px 30px rgba(0,0,0,0.5);
+    touch-action: manipulation;
+  }
+
+  /* dot-matrix panel texture */
+  #board .grid-overlay {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1.4px);
+    background-size: 7px 7px;
+    pointer-events: none;
+    z-index: 3;
+  }
+  #board .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 50% 50%, transparent 45%, rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* rotator wraps the marquee so we can turn the sign 90deg in fullscreen */
+  #rotator {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  #marquee {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    will-change: transform;
+    transform: translate3d(0,0,0);
+    backface-visibility: hidden;
+  }
+  #marquee.run {
+    animation-name: slide;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  #marquee.hold { animation-play-state: paused; }
+  #marquee, .cell { contain: paint; }
+  @keyframes slide {
+    from { transform: translate3d(calc(var(--from, 0) * 1px), 0, 0); }
+    to   { transform: translate3d(calc(var(--to, 0) * 1px), 0, 0); }
+  }
+
+  .cell {
+    flex: none;
+    padding-right: 2em;
+    font-size: calc(var(--sign-size) * 1px);
+    line-height: 1.25;
+    color: var(--neon-color);
+    text-shadow:
+      0 0 calc(5px * var(--intensity)) var(--neon-color),
+      0 0 calc(18px * var(--intensity)) var(--neon-color);
+  }
+
+  /* --- font styles --- */
+  body[data-font="dot"] .cell {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    -webkit-mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='7' height='7' fill='%23fff'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='7' height='7' fill='%23fff'/%3E%3C/svg%3E");
+    -webkit-mask-repeat: repeat; mask-repeat: repeat;
+    -webkit-mask-size: 0.09em 0.09em; mask-size: 0.09em 0.09em;
+  }
+  body[data-font="tube"] .cell { font-family: 'Monoton', cursive; text-transform: uppercase; }
+  body[data-font="script"] .cell { font-family: 'Pacifico', cursive; }
+
+  body.flicker .cell { animation: flick var(--flicker-speed, 3.5s) infinite; }
+  body.rgb .cell { animation: hue 7s linear infinite; }
+  body.rgb.flicker .cell {
+    animation: flick var(--flicker-speed, 3.5s) infinite, hue 7s linear infinite;
+  }
+  @keyframes hue {
+    from { filter: hue-rotate(0deg); }
+    to   { filter: hue-rotate(360deg); }
+  }
+  body.rgb .wordmark { animation: hue 7s linear infinite; }
+
+  /* Infinity-mirror mode: the message is repeated into the depth of the
+     board, each copy smaller and dimmer, so the sign looks like a tunnel. */
+  .layer {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    transform-origin: 50% 50%;
+    pointer-events: none;
+  }
+  .layer .mq {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+  .layer .mq.run {
+    animation-name: slide;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  .layer .mq.hold { animation-play-state: paused; }
+  /* only the front copy carries the full glow; the rest stay cheap and flat */
+  .layer:not(.front) .cell { text-shadow: none; }
+  @keyframes flick {
+    0%, 3%, 6%, 100% { opacity: 1; }
+    4% { opacity: 0.3; }
+    5% { opacity: 0.9; }
+    47% { opacity: 1; }
+    48% { opacity: 0.45; }
+    49% { opacity: 1; }
+  }
+
+  #hint {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-dim); font-size: 14px; text-align: center; padding: 0 24px;
+    z-index: 2;
+  }
+
+  #fsBtn {
+    position: absolute; right: 8px; bottom: 8px; z-index: 6;
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.5);
+    color: rgba(255,255,255,0.8);
+    font-size: 17px; line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ============ FULLSCREEN ============ */
+
+  body.fs { overflow: hidden; height: 100svh; }
+  body.fs #controls { display: none; }
+  body.fs #board {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100svh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    z-index: 999;
+  }
+  /* When held upright, spin the sign so it reads along the long edge. */
+  body.fs.rot #rotator {
+    width: 100svh;
+    height: 100vw;
+    top: 50%;
+    left: 50%;
+    margin-left: -50svh;
+    margin-top: -50vw;
+    transform: rotate(90deg);
+  }
+  body.fs #fsBtn { opacity: 0.3; right: 16px; bottom: 16px; }
+
+  /* ============ CONTROLS ============ */
+
+  #controls {
+    padding: 10px 14px calc(28px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  .field > label, .row > label {
+    display: block; font-size: 12px; color: var(--ink-dim); margin-bottom: 7px;
+  }
+  .row > label { margin-bottom: 0; }
+
+  #textInput {
+    width: 100%;
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    border-radius: 12px;
+    padding: 14px;
+    color: var(--ink);
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+  }
+  #textInput:focus { border-color: var(--neon-color); }
+  #textInput { padding-right: 46px; }
+
+  .input-wrap { position: relative; }
+  #clearBtn {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 36px; height: 36px; border-radius: 10px;
+    border: none; background: transparent;
+    color: var(--ink-dim); font-size: 15px; cursor: pointer;
+  }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+  .btn-group { display: flex; gap: 8px; }
+  .gbtn {
+    flex: 1;
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+    color: var(--ink-dim);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gbtn.active {
+    background: var(--neon-color);
+    border-color: var(--neon-color);
+    color: #06060a;
+    font-weight: 700;
+  }
+
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .sw {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid transparent; padding: 0; cursor: pointer;
+  }
+  .sw.active { border-color: #fff; }
+  .sw-custom {
+    width: 34px; height: 34px; border-radius: 50%; overflow: hidden;
+    border: 1px dashed var(--control-border); position: relative;
+  }
+  .sw-custom input {
+    position: absolute; top: -10px; left: -10px; width: 54px; height: 54px;
+    border: none; padding: 0; background: none; cursor: pointer;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 26px;
+    background: transparent; outline: none; margin: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px; background: var(--control-border);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--neon-color); box-shadow: 0 0 8px var(--neon-color);
+    border: none; margin-top: -9px;
+  }
+  input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--control-border); }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%; border: none;
+    background: var(--neon-color); box-shadow: 0 0 8px var(--neon-color);
+  }
+
+  .switch {
+    width: 52px; height: 30px; border-radius: 15px; flex: none;
+    background: var(--control-bg); border: 1px solid var(--control-border);
+    position: relative; cursor: pointer;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--ink-dim); transition: left .15s, background .15s;
+  }
+  .switch.on { border-color: var(--neon-color); }
+  .switch.on::after { left: 25px; background: var(--neon-color); box-shadow: 0 0 6px var(--neon-color); }
+
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .stepper button {
+    width: 48px; height: 48px; border-radius: 12px;
+    border: 1px solid var(--control-border); background: var(--control-bg);
+    color: var(--ink); font-size: 20px; cursor: pointer;
+  }
+  .stepper span { min-width: 32px; text-align: center; color: var(--ink-dim); font-size: 13px; }
+
+  hr.sep { border: none; height: 1px; background: var(--control-border); margin: 2px 0; }
+  .sect { font-size: 11px; letter-spacing: .1em; color: rgba(255,255,255,.28); text-transform: uppercase; }
+  .wordmark {
+    font-size: 19px; font-weight: 700; letter-spacing: -0.01em;
+    color: var(--neon-color);
+    text-shadow: 0 0 14px var(--neon-color);
+    margin: 2px 0 2px;
+  }
+  .saved-head { display: flex; align-items: center; justify-content: space-between; }
+  .saved-head label { margin-bottom: 0; }
+  #saveBtn {
+    border: 1px solid var(--neon-color);
+    background: transparent;
+    color: var(--neon-color);
+    border-radius: 9px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .chips {
+    display: flex; gap: 8px;
+    overflow-x: auto;
+    padding: 9px 0 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips:empty::after {
+    content: "Nothing saved yet";
+    color: rgba(255,255,255,.22);
+    font-size: 12px;
+    padding: 4px 0;
+  }
+  .chip {
+    flex: none;
+    display: flex; align-items: center; gap: 8px;
+    max-width: 62vw;
+    padding: 9px 10px 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+    color: var(--ink);
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .chip .name {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .chip .kill {
+    border: none; background: none; padding: 0 2px;
+    color: var(--ink-dim); font-size: 14px; cursor: pointer;
+  }
+  #resetBtn {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 12px;
+    border: 1px solid var(--control-border);
+    background: transparent;
+    color: var(--ink-dim);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  #resetBtn.confirm {
+    color: #ff6b6b;
+    border-color: #ff6b6b;
+  }
+  .foot { text-align: center; font-size: 11px; color: rgba(255,255,255,.14); letter-spacing: .08em; }
+</style>
+</head>
+<body data-font="dot">
+
+<div id="board">
+  <div id="rotator"><div id="marquee"></div></div>
+  <div class="grid-overlay"></div>
+  <div class="vignette"></div>
+  <div id="hint">Type here...</div>
+  <button id="fsBtn" type="button" aria-label="Fullscreen">⛶</button>
+</div>
+
+<div id="controls">
+
+  <div class="wordmark">Neonly</div>
+
+  <div class="field">
+    <label for="textInput">Sign text</label>
+    <div class="input-wrap">
+      <input id="textInput" type="text" maxlength="80" placeholder="Type here..." autocomplete="off" autocapitalize="characters">
+      <button id="clearBtn" type="button" aria-label="Clear text">✕</button>
+    </div>
+  </div>
+
+  <div class="field" id="savedField">
+    <div class="saved-head">
+      <label>Saved signs</label>
+      <button id="saveBtn" type="button">Save current</button>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="field">
+    <label>Scroll direction</label>
+    <div class="btn-group">
+      <button class="gbtn" id="dirL" type="button">←</button>
+      <button class="gbtn" id="dirP" type="button">⏸</button>
+      <button class="gbtn" id="dirR" type="button">→</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="speed">Speed</label>
+    <input type="range" id="speed" min="1" max="10" step="1" value="5">
+  </div>
+
+  <div class="row">
+    <label>Flicker</label>
+    <div class="switch" id="swFlicker"></div>
+  </div>
+
+  <div class="field" id="freqField">
+    <label for="freq">Flicker rate</label>
+    <input type="range" id="freq" min="1" max="10" step="1" value="5">
+  </div>
+
+  <div class="row">
+    <label>Keep screen on</label>
+    <div class="switch" id="swWake"></div>
+  </div>
+
+  <hr class="sep">
+  <div class="sect">Style</div>
+
+  <div class="btn-group">
+    <button class="gbtn active" data-font="dot" type="button">LED</button>
+    <button class="gbtn" data-font="tube" type="button">Tube</button>
+    <button class="gbtn" data-font="script" type="button">Script</button>
+    <button class="gbtn" id="rgbBtn" type="button">RGB</button>
+    <button class="gbtn" id="mirrorBtn" type="button">Mirror</button>
+  </div>
+
+  <div class="row">
+    <label>Size</label>
+    <div class="stepper">
+      <button id="szDown" type="button">−</button>
+      <span id="szVal">60</span>
+      <button id="szUp" type="button">+</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="glow">Glow</label>
+    <input type="range" id="glow" min="0.3" max="2" step="0.1" value="1">
+  </div>
+
+  <div class="field">
+    <label>Text color</label>
+    <div class="swatches" id="swFont">
+      <div class="sw-custom"><input type="color" id="cFont" value="#39ff65"></div>
+    </div>
+  </div>
+
+  <button id="resetBtn" type="button">Reset to defaults</button>
+
+  <div class="foot">NEONLY</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var FONT_COLORS = ['#39ff65','#21eaff','#ff2ec4','#fff45c','#c724ff','#ff6a1a','#ff2d55','#f5f7ff'];
+
+  var board    = document.getElementById('board');
+  var rotator  = document.getElementById('rotator');
+  var marquee  = document.getElementById('marquee');
+  var hint     = document.getElementById('hint');
+  hint.addEventListener('click', function () { if (!fullscreen) input.focus(); });
+  var fsBtn    = document.getElementById('fsBtn');
+  var input    = document.getElementById('textInput');
+  var clearBtn = document.getElementById('clearBtn');
+  var speedEl  = document.getElementById('speed');
+  var freqEl   = document.getElementById('freq');
+  var freqField= document.getElementById('freqField');
+  var glowEl   = document.getElementById('glow');
+  var swFlicker= document.getElementById('swFlicker');
+  var swWake   = document.getElementById('swWake');
+  var dirL = document.getElementById('dirL'), dirP = document.getElementById('dirP'), dirR = document.getElementById('dirR');
+  var szDown = document.getElementById('szDown'), szUp = document.getElementById('szUp'), szVal = document.getElementById('szVal');
+  var swFont = document.getElementById('swFont');
+  var cFont = document.getElementById('cFont');
+  var fontBtns = document.querySelectorAll('.gbtn[data-font]');
+  var rgbBtn = document.getElementById('rgbBtn');
+  var mirrorBtn = document.getElementById('mirrorBtn');
+
+  var S = {
+    text: '',
+    fontColor: '#39ff65',
+    speed: 5,
+    size: 60,
+    glow: 1,
+    flicker: false,
+    freq: 5,
+    font: 'dot',
+    rgb: false,
+    mirror: false,
+    dir: 'rl',
+    paused: false,
+    wake: false
+  };
+
+  try { localStorage.removeItem('neon-v3'); } catch (e) {}
+
+  try {
+    var raw = localStorage.getItem('neon-v4');
+    if (raw) { var s = JSON.parse(raw); for (var k in S) if (k in s) S[k] = s[k]; }
+  } catch (e) {}
+
+  function save() { try { localStorage.setItem('neon-v4', JSON.stringify(S)); } catch (e) {} }
+
+  /* ---------- marquee engine (CSS compositor animation) ---------- */
+
+  var cellWidth = 0;
+
+  function fitSize() {
+    // The user's size is a ceiling; shrink it if the board is too short,
+    // so a tall letter is never sliced off at the top or bottom.
+    var h = rotator.offsetHeight || board.offsetHeight;
+    if (!h) h = 200;
+    var maxByHeight = Math.floor(h * 0.62);
+    var applied = Math.max(18, Math.min(S.size, maxByHeight));
+    document.documentElement.style.setProperty('--sign-size', applied);
+    return applied;
+  }
+
+  var mqList = [];
+
+  function makeStrip(text) {
+    var mq = document.createElement('div');
+    mq.className = 'mq';
+    var cell = document.createElement('span');
+    cell.className = 'cell';
+    cell.textContent = text;
+    mq.appendChild(cell);
+    return mq;
+  }
+
+  function buildMarquee() {
+    fitSize();
+    var t = (S.text || '').trim();
+    marquee.innerHTML = '';
+    marquee.className = '';
+    mqList = [];
+
+    // clear any previous depth layers
+    var old = rotator.querySelectorAll('.layer');
+    for (var k = 0; k < old.length; k++) rotator.removeChild(old[k]);
+
+    if (!t) { hint.style.display = 'flex'; cellWidth = 0; return; }
+    hint.style.display = 'none';
+
+    if (!S.mirror) {
+      // single strip, straight across the board
+      var cell = document.createElement('span');
+      cell.className = 'cell';
+      cell.textContent = t;
+      marquee.appendChild(cell);
+      cellWidth = cell.offsetWidth || cell.scrollWidth || 1;
+      mqList = [marquee];
+      marquee.style.display = '';
+    } else {
+      // infinity mirror: the same message receding into the board
+      marquee.style.display = 'none';
+      var DEPTH = 6;
+      for (var i = DEPTH - 1; i >= 0; i--) {
+        var scale = Math.pow(0.74, i);          // each copy sits further back
+        var layer = document.createElement('div');
+        layer.className = 'layer' + (i === 0 ? ' front' : '');
+        layer.style.transform = 'scale(' + scale.toFixed(4) + ')';
+        layer.style.opacity = (Math.pow(0.62, i)).toFixed(3);
+        var mq = makeStrip(t);
+        layer.appendChild(mq);
+        rotator.appendChild(layer);
+        mqList.push(mq);
+        if (i === 0) {
+          cellWidth = mq.firstChild.offsetWidth || mq.firstChild.scrollWidth || 1;
+        }
+      }
+    }
+
+    if (!cellWidth || !isFinite(cellWidth)) cellWidth = 1;
+    applyAnimation();
+  }
+
+  function applyAnimation() {
+    if (!cellWidth || !mqList.length) return;
+
+    var viewW = rotator.offsetWidth;
+    if (!viewW) viewW = window.innerWidth;
+
+    var from, to;
+    if (S.dir === 'rl') { from = viewW; to = -cellWidth; }
+    else                { from = -cellWidth; to = viewW; }
+
+    var distance = Math.abs(to - from);
+    var pxPerSecond = 30 + (S.speed - 1) * 40;      // 30 .. 390
+    var duration = distance / pxPerSecond;
+    if (!isFinite(duration) || duration <= 0) duration = 8;
+
+    var cls = S.paused ? 'run hold' : 'run';
+    for (var i = 0; i < mqList.length; i++) {
+      var el = mqList[i];
+      el.style.setProperty('--from', from.toFixed(2));
+      el.style.setProperty('--to', to.toFixed(2));
+      el.style.animationDuration = duration + 's';
+      el.className = (el === marquee ? '' : 'mq ') + cls;
+    }
+  }
+
+  var lastKey = null;
+  function refresh(force) {
+    var viewW = rotator.offsetWidth;
+    var key = [ (S.text || '').trim(), S.font, S.size, viewW, S.dir, S.mirror ].join('|');
+    if (!force && key === lastKey) return;   // nothing changed: let it keep gliding
+    lastKey = key;
+    buildMarquee();
+  }
+
+  /* ---------- appearance ---------- */
+
+  function setFontColor(hex) {
+    S.fontColor = hex;
+    document.documentElement.style.setProperty('--neon-color', hex);
+    cFont.value = hex;
+    markSwatches(swFont, hex);
+    save();
+  }
+  function markSwatches(wrap, hex) {
+    var list = wrap.querySelectorAll('.sw');
+    for (var i = 0; i < list.length; i++) {
+      list[i].classList.toggle('active', list[i].dataset.hex.toLowerCase() === hex.toLowerCase());
+    }
+  }
+  function buildSwatches(wrap, colors, fn) {
+    colors.forEach(function (hex) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'sw';
+      b.style.background = hex; b.dataset.hex = hex;
+      b.addEventListener('click', function () { fn(hex); });
+      wrap.insertBefore(b, wrap.lastElementChild);
+    });
+  }
+
+  function setRgb(on) {
+    S.rgb = on;
+    document.body.classList.toggle('rgb', on);
+    rgbBtn.classList.toggle('active', on);
+    save();
+  }
+
+  function setMirror(on) {
+    S.mirror = on;
+    document.body.classList.toggle('mirror', on);
+    mirrorBtn.classList.toggle('active', on);
+    save();
+    refresh(true);
+  }
+
+  function setFont(f) {
+    S.font = f;
+    document.body.setAttribute('data-font', f);
+    for (var i = 0; i < fontBtns.length; i++) {
+      fontBtns[i].classList.toggle('active', fontBtns[i].dataset.font === f);
+    }
+    save(); refresh(true);
+  }
+
+  function setSize(px) {
+    S.size = Math.max(20, Math.min(220, px));
+    szVal.textContent = S.size;
+    save(); refresh(true);
+  }
+
+  function setGlow(v) {
+    S.glow = v;
+    document.documentElement.style.setProperty('--intensity', v);
+    save();
+  }
+
+  function setDir(d) {
+    S.dir = d; S.paused = false;
+    dirL.classList.toggle('active', d === 'rl');
+    dirR.classList.toggle('active', d === 'lr');
+    dirP.classList.remove('active');
+    save(); applyAnimation();
+  }
+  function togglePause() {
+    S.paused = !S.paused;
+    dirP.classList.toggle('active', S.paused);
+    save(); applyAnimation();
+  }
+
+  function updateFlicker() {
+    document.body.classList.toggle('flicker', S.flicker);
+    swFlicker.classList.toggle('on', S.flicker);
+    freqField.style.display = S.flicker ? 'block' : 'none';
+  }
+  function updateFreq() {
+    document.documentElement.style.setProperty('--flicker-speed', ((11 - S.freq) * 0.65) + 's');
+  }
+
+  /* ---------- wake lock ---------- */
+
+  var lock = null;
+  function acquireLock() {
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').then(function (l) { lock = l; }).catch(function () {});
+  }
+  function releaseLock() {
+    if (lock) { try { lock.release(); } catch (e) {} lock = null; }
+  }
+  function updateWake() {
+    swWake.classList.toggle('on', S.wake);
+    if (S.wake || fullscreen) acquireLock(); else releaseLock();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      if (S.wake || fullscreen) acquireLock();
+    }
+  });
+
+  /* ---------- fullscreen ---------- */
+
+  var fullscreen = false;
+
+  function applyRotation() {
+    var portrait = window.innerHeight >= window.innerWidth;
+    document.body.classList.toggle('rot', fullscreen && portrait);
+  }
+
+  function enterFS() {
+    fullscreen = true;
+    document.body.classList.add('fs');
+    fsBtn.textContent = '✕';
+
+    var el = document.documentElement;
+    var req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) {
+      try {
+        var p = req.call(el);
+        if (p && p.then) {
+          p.then(function () {
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock('landscape').catch(function () {});
+            }
+            setTimeout(function () { applyRotation(); refresh(true); }, 250);
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+    acquireLock();
+    applyRotation();
+    setTimeout(function () { applyRotation(); refresh(true); }, 350);
+  }
+
+  function exitFS() {
+    fullscreen = false;
+    document.body.classList.remove('fs', 'rot');
+    fsBtn.textContent = '⛶';
+    if (screen.orientation && screen.orientation.unlock) {
+      try { screen.orientation.unlock(); } catch (e) {}
+    }
+    var ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (ex && (document.fullscreenElement || document.webkitFullscreenElement)) {
+      try { ex.call(document); } catch (e) {}
+    }
+    if (!S.wake) releaseLock();
+    setTimeout(function () { refresh(true); }, 250);
+  }
+
+  fsBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (fullscreen) exitFS(); else enterFS();
+  });
+
+  document.addEventListener('fullscreenchange', function () {
+    if (!document.fullscreenElement && fullscreen) exitFS();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && fullscreen) exitFS();
+  });
+
+  /* ---------- wiring ---------- */
+
+  input.addEventListener('input', function () { S.text = input.value; save(); refresh(true); });
+  clearBtn.addEventListener('click', function () {
+    input.value = ''; S.text = ''; save(); refresh(true); input.focus();
+  });
+  speedEl.addEventListener('input', function () { S.speed = +speedEl.value; save(); applyAnimation(); });
+  glowEl.addEventListener('input', function () { setGlow(+glowEl.value); });
+  freqEl.addEventListener('input', function () { S.freq = +freqEl.value; updateFreq(); save(); });
+  swFlicker.addEventListener('click', function () { S.flicker = !S.flicker; updateFlicker(); save(); });
+  swWake.addEventListener('click', function () { S.wake = !S.wake; updateWake(); save(); });
+  dirL.addEventListener('click', function () { setDir('rl'); });
+  dirR.addEventListener('click', function () { setDir('lr'); });
+  dirP.addEventListener('click', togglePause);
+  szDown.addEventListener('click', function () { setSize(S.size - 8); });
+  szUp.addEventListener('click', function () { setSize(S.size + 8); });
+  for (var i = 0; i < fontBtns.length; i++) {
+    (function (b) { b.addEventListener('click', function () { setFont(b.dataset.font); }); })(fontBtns[i]);
+  }
+  cFont.addEventListener('input', function () { setFontColor(cFont.value); });
+  rgbBtn.addEventListener('click', function () { setRgb(!S.rgb); });
+  mirrorBtn.addEventListener('click', function () { setMirror(!S.mirror); });
+
+  /* ---------- saved signs ---------- */
+
+  var chips = document.getElementById('chips');
+  var saveBtn = document.getElementById('saveBtn');
+  var SAVED_KEY = 'neon-saved-v1';
+
+  function readSaved() {
+    try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || []; }
+    catch (e) { return []; }
+  }
+  function writeSaved(list) {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+
+  function snapshot() {
+    return {
+      id: String(Date.now()),
+      text: S.text,
+      fontColor: S.fontColor,
+      speed: S.speed,
+      size: S.size,
+      glow: S.glow,
+      flicker: S.flicker,
+      freq: S.freq,
+      font: S.font,
+      dir: S.dir,
+      rgb: S.rgb,
+      mirror: S.mirror
+    };
+  }
+
+  function loadPreset(pre) {
+    S.text = pre.text;
+    S.fontColor = pre.fontColor;
+    S.speed = pre.speed;
+    S.size = pre.size;
+    S.glow = pre.glow;
+    S.flicker = pre.flicker;
+    S.freq = pre.freq;
+    S.font = pre.font;
+    S.dir = pre.dir;
+    S.rgb = pre.rgb;
+    S.mirror = pre.mirror;
+    S.paused = false;
+
+    input.value = S.text;
+    speedEl.value = S.speed;
+    freqEl.value = S.freq;
+    glowEl.value = S.glow;
+
+    setFontColor(S.fontColor);
+    setRgb(S.rgb);
+    setMirror(S.mirror);
+    setFont(S.font);
+    setSize(S.size);
+    setGlow(S.glow);
+    updateFlicker();
+    updateFreq();
+    setDir(S.dir);
+    save();
+    refresh(true);
+  }
+
+  function renderChips() {
+    var list = readSaved();
+    chips.innerHTML = '';
+    list.forEach(function (pre) {
+      var chip = document.createElement('div');
+      chip.className = 'chip';
+
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = pre.rgb ? '#39ff65' : pre.fontColor;
+      dot.style.boxShadow = '0 0 6px ' + (pre.rgb ? '#39ff65' : pre.fontColor);
+
+      var name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = pre.text || '(empty)';
+      name.addEventListener('click', function () { loadPreset(pre); });
+
+      var kill = document.createElement('button');
+      kill.className = 'kill';
+      kill.type = 'button';
+      kill.textContent = '✕';
+      kill.setAttribute('aria-label', 'Delete');
+      kill.addEventListener('click', function (e) {
+        e.stopPropagation();
+        writeSaved(readSaved().filter(function (x) { return x.id !== pre.id; }));
+        renderChips();
+      });
+
+      chip.appendChild(dot);
+      chip.appendChild(name);
+      chip.appendChild(kill);
+      chips.appendChild(chip);
+    });
+  }
+
+  saveBtn.addEventListener('click', function () {
+    if (!(S.text || '').trim()) { input.focus(); return; }
+    var list = readSaved();
+    // same message twice? overwrite it instead of piling up duplicates
+    list = list.filter(function (x) { return x.text !== S.text; });
+    list.unshift(snapshot());
+    if (list.length > 20) list = list.slice(0, 20);
+    writeSaved(list);
+    renderChips();
+    saveBtn.textContent = 'Saved';
+    setTimeout(function () { saveBtn.textContent = 'Save current'; }, 1200);
+  });
+
+  var resetBtn = document.getElementById('resetBtn');
+  var resetArmed = false, resetTimer;
+  resetBtn.addEventListener('click', function () {
+    if (!resetArmed) {
+      resetArmed = true;
+      resetBtn.classList.add('confirm');
+      resetBtn.textContent = 'Tap again to reset';
+      resetTimer = setTimeout(disarmReset, 3000);
+      return;
+    }
+    disarmReset();
+    doReset();
+  });
+
+  function disarmReset() {
+    clearTimeout(resetTimer);
+    resetArmed = false;
+    resetBtn.classList.remove('confirm');
+    resetBtn.textContent = 'Reset to defaults';
+  }
+
+  function doReset() {
+    S.text = '';
+    S.fontColor = '#39ff65';
+    S.speed = 5;
+    S.size = 60;
+    S.glow = 1;
+    S.flicker = false;
+    S.freq = 5;
+    S.font = 'dot';
+    S.dir = 'rl';
+    S.paused = false;
+    S.wake = false;
+    S.rgb = false;
+    S.mirror = false;
+
+    try { localStorage.removeItem('neon-v4'); } catch (e) {}
+
+    input.value = '';
+    speedEl.value = S.speed;
+    freqEl.value = S.freq;
+    glowEl.value = S.glow;
+
+    setFontColor(S.fontColor);
+    setRgb(false);
+    setMirror(false);
+    setFont(S.font);
+    setSize(S.size);
+    setGlow(S.glow);
+    updateFlicker();
+    updateFreq();
+    updateWake();
+    setDir(S.dir);
+    dirP.classList.remove('active');
+    refresh(true);
+  }
+
+  var resizeTimer, lastW = window.innerWidth;
+  function onResize() {
+    // The address bar sliding away changes the height only; rebuilding there
+    // is what made the sign hiccup, so only react to real width changes.
+    if (Math.abs(window.innerWidth - lastW) < 2 && !fullscreen) return;
+    lastW = window.innerWidth;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { applyRotation(); refresh(); }, 250);
+  }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', function () { setTimeout(onResize, 200); });
+
+  /* ---------- init ---------- */
+
+  buildSwatches(swFont, FONT_COLORS, setFontColor);
+
+  input.value = S.text;
+  speedEl.value = S.speed;
+  freqEl.value = S.freq;
+  glowEl.value = S.glow;
+
+  setFontColor(S.fontColor);
+  document.body.setAttribute('data-font', S.font);
+  for (var j = 0; j < fontBtns.length; j++) {
+    fontBtns[j].classList.toggle('active', fontBtns[j].dataset.font === S.font);
+  }
+  setSize(S.size);
+  setGlow(S.glow);
+  setRgb(S.rgb);
+  document.body.classList.toggle('mirror', S.mirror);
+  mirrorBtn.classList.toggle('active', S.mirror);
+  updateFlicker();
+  updateFreq();
+  updateWake();
+  dirL.classList.toggle('active', S.dir === 'rl');
+  dirR.classList.toggle('active', S.dir === 'lr');
+  dirP.classList.toggle('active', S.paused);
+
+  renderChips();
+
+  refresh(true);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { refresh(true); });
+  }
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('service-worker.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
